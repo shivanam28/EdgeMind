@@ -1,0 +1,20 @@
+services:
+  qdrant-edge:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-edge
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  qdrant-cloud:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-cloud
+    ports:
+      - "6335:6333"
+      - "6336:6334"
+    volumes:
+      - ./data/qdrant_cloud_storage:/qdrant/storage
+    restart: unless-stopped
