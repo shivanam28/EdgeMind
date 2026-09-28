@@ -1,10 +1,21 @@
 from app.services.network_state import is_online
-from app.services.sync_log_service import get_dirty_records, mark_synced, mark_sync_failed
-from app.services.qdrant_service import get_point_from_edge, push_point_to_cloud, pull_point_to_edge, detect_conflict, get_cloud_point
+from app.services.sync_log_service import (
+    get_dirty_records,
+    mark_synced,
+    mark_sync_failed,
+    mark_local_only,
+)
+from app.services.qdrant_service import (
+    get_point_from_edge,
+    push_point_to_cloud,
+    pull_point_to_edge,
+    detect_conflict,
+)
+
 
 def run_sync():
     if not is_online():
-        return {"status": "skipped", "reason": "offline", "synced": 0, "failed": 0}
+        return {"status": "skipped", "reason": "offline", "synced": 0, "failed": 0, "conflicts": 0}
 
     dirty_records = get_dirty_records()
     synced_count = 0
@@ -23,6 +34,11 @@ def run_sync():
             if point is None:
                 raise Exception(f"Point {point_id} not found on Edge")
 
+            # Data residency guard: LOCAL_ONLY data never leaves the device
+            if point.payload.get("security_tier") == "LOCAL_ONLY":
+                mark_local_only(record["id"])
+                continue
+
             edge_version = point.payload.get("version", 1)
             conflict = detect_conflict(point_id, edge_version, point.vector)
 
@@ -39,20 +55,17 @@ def run_sync():
                 conflict_count += 1
 
             else:  # SAME_VERSION_DIFFERENT_CONTENT
-                
                 similarity = conflict["similarity"]
                 print(f"DEBUG: point {point_id} similarity = {similarity}")
                 if similarity > 0.9:
-                    # Close enough in meaning — safe to auto-resolve, Edge wins by convention
                     push_point_to_cloud(point_id, point.vector, point.payload)
                     mark_synced(record["id"])
                     synced_count += 1
                     conflict_count += 1
                 else:
-                    # Meaningfully different — do NOT auto-resolve, flag for human review
                     mark_sync_failed(
                         record["id"],
-                        f"CONFLICT: same version, low similarity ({similarity:.3f}) — needs manual review"
+                        f"CONFLICT: same version, low similarity ({similarity:.3f}) - needs manual review",
                     )
                     conflict_count += 1
 

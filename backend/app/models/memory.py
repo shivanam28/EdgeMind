@@ -3,8 +3,8 @@ from typing import Optional
 
 class MemoryCreate(BaseModel):
     text: str
-    category: Optional[str] = "general"
-    security_tier: Optional[str] = None   # None = "let classify_data() decide"
+    category: Optional[str] = None       # None = infer automatically
+    security_tier: Optional[str] = None  # None = classify automatically
 
 class SearchQuery(BaseModel):
     query: str

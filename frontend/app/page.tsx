@@ -37,6 +37,7 @@ type SyncStatus = {
   total_records: number;
   pending_count: number;
   synced_count: number;
+  local_only_count: number;
   failed_count: number;
   records: SyncRecord[];
 };
@@ -49,13 +50,18 @@ export default function Dashboard() {
   // --- Memory ---
   const [memories, setMemories] = useState<Memory[]>([]);
   const [newText, setNewText] = useState("");
-  const [newCategory, setNewCategory] = useState("general");
   const [adding, setAdding] = useState(false);
+
+  // --- Cloud view ---
+  const [cloudMemories, setCloudMemories] = useState<Memory[]>([]);
+  const [cloudReachable, setCloudReachable] = useState(true);
 
   // --- Search ---
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterTier, setFilterTier] = useState("");
 
   // --- Sync ---
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -68,18 +74,32 @@ export default function Dashboard() {
     setIsOnline(data.is_online);
   };
 
+  const fetchMemories = async () => {
+    const res = await fetch(`${API_BASE}/memory`);
+    const data = await res.json();
+    setMemories(data.memories);
+  };
+
+  const fetchCloud = async () => {
+    const res = await fetch(`${API_BASE}/cloud/memory`);
+    const data = await res.json();
+    setCloudMemories(data.memories);
+    setCloudReachable(data.reachable);
+  };
+
+  const fetchSyncStatus = async () => {
+    const res = await fetch(`${API_BASE}/sync/status`);
+    const data = await res.json();
+    setSyncStatus(data);
+  };
+
   const toggleNetwork = async () => {
     setLoading(true);
     const newState = !isOnline;
     await fetch(`${API_BASE}/network/toggle?online=${newState}`, { method: "POST" });
     await fetchStatus();
+    await fetchCloud();
     setLoading(false);
-  };
-
-  const fetchMemories = async () => {
-    const res = await fetch(`${API_BASE}/memory`);
-    const data = await res.json();
-    setMemories(data.memories);
   };
 
   const addMemory = async () => {
@@ -88,7 +108,7 @@ export default function Dashboard() {
     await fetch(`${API_BASE}/memory`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: newText, category: newCategory }),
+      body: JSON.stringify({ text: newText }),
     });
     setNewText("");
     await fetchMemories();
@@ -99,20 +119,17 @@ export default function Dashboard() {
   const runSearch = async () => {
     if (!query.trim()) return;
     setSearching(true);
+    const body: Record<string, unknown> = { query, limit: 5 };
+    if (filterCategory) body.category = filterCategory;
+    if (filterTier) body.security_tier = filterTier;
     const res = await fetch(`${API_BASE}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, limit: 5 }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     setResults(data.results);
     setSearching(false);
-  };
-
-  const fetchSyncStatus = async () => {
-    const res = await fetch(`${API_BASE}/sync/status`);
-    const data = await res.json();
-    setSyncStatus(data);
   };
 
   const runSync = async () => {
@@ -128,6 +145,8 @@ export default function Dashboard() {
       );
     }
     await fetchSyncStatus();
+    await fetchMemories();
+    await fetchCloud();
     setSyncing(false);
   };
 
@@ -138,11 +157,14 @@ export default function Dashboard() {
       body: JSON.stringify({ point_id: parseInt(pointId), choice }),
     });
     await fetchSyncStatus();
+    await fetchMemories();
+    await fetchCloud();
   };
 
   useEffect(() => {
     fetchStatus();
     fetchMemories();
+    fetchCloud();
     fetchSyncStatus();
   }, []);
 
@@ -151,6 +173,8 @@ export default function Dashboard() {
     if (tier === "CLOUD_RESIDENT") return "bg-blue-900 text-blue-300";
     return "bg-yellow-900 text-yellow-300"; // HYBRID
   };
+
+  const cloudIds = new Set(cloudMemories.map((c) => c.point_id));
 
   return (
     <main className="min-h-screen bg-gray-950 text-white p-8 space-y-6">
@@ -204,17 +228,6 @@ export default function Dashboard() {
             placeholder="New memory text..."
             className="flex-1 bg-gray-800 rounded px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600"
           />
-          <select
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            className="bg-gray-800 rounded px-2 py-2 text-sm"
-          >
-            <option value="general">general</option>
-            <option value="maintenance">maintenance</option>
-            <option value="office">office</option>
-            <option value="hr">hr</option>
-            <option value="global_report">global_report</option>
-          </select>
           <button
             onClick={addMemory}
             disabled={adding}
@@ -248,7 +261,7 @@ export default function Dashboard() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runSearch()}
-            placeholder="e.g. machine running too hot"
+            placeholder="e.g. breathing problems"
             className="flex-1 bg-gray-800 rounded px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-600"
           />
           <button
@@ -258,6 +271,30 @@ export default function Dashboard() {
           >
             {searching ? "Searching..." : "Search"}
           </button>
+        </div>
+
+        <div className="flex gap-2 mt-3">
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="bg-gray-800 rounded px-2 py-1 text-xs"
+          >
+            <option value="">Any category</option>
+            <option value="patient_visit">patient_visit</option>
+            <option value="clinic_ops">clinic_ops</option>
+            <option value="public_health_report">public_health_report</option>
+            <option value="general">general</option>
+          </select>
+          <select
+            value={filterTier}
+            onChange={(e) => setFilterTier(e.target.value)}
+            className="bg-gray-800 rounded px-2 py-1 text-xs"
+          >
+            <option value="">Any tier</option>
+            <option value="LOCAL_ONLY">LOCAL_ONLY</option>
+            <option value="HYBRID">HYBRID</option>
+            <option value="CLOUD_RESIDENT">CLOUD_RESIDENT</option>
+          </select>
         </div>
 
         <div className="space-y-2 mt-4">
@@ -293,7 +330,7 @@ export default function Dashboard() {
         </div>
 
         {syncStatus && (
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-4 gap-3 mb-4">
             <div className="bg-gray-800 rounded p-3 text-center">
               <p className="text-2xl font-bold text-yellow-400">{syncStatus.pending_count}</p>
               <p className="text-xs text-gray-400">Pending</p>
@@ -301,6 +338,10 @@ export default function Dashboard() {
             <div className="bg-gray-800 rounded p-3 text-center">
               <p className="text-2xl font-bold text-green-400">{syncStatus.synced_count}</p>
               <p className="text-xs text-gray-400">Synced</p>
+            </div>
+            <div className="bg-gray-800 rounded p-3 text-center">
+              <p className="text-2xl font-bold text-red-300">{syncStatus.local_only_count}</p>
+              <p className="text-xs text-gray-400">Kept on device</p>
             </div>
             <div className="bg-gray-800 rounded p-3 text-center">
               <p className="text-2xl font-bold text-red-400">{syncStatus.failed_count}</p>
@@ -332,6 +373,67 @@ export default function Dashboard() {
                 )}
               </div>
             ))}
+        </div>
+      </div>
+
+      {/* Edge vs Cloud */}
+      <div className="bg-gray-900 rounded-lg p-6 max-w-4xl">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Edge vs Cloud</h2>
+          <button
+            onClick={() => {
+              fetchMemories();
+              fetchCloud();
+            }}
+            className="text-sm px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm text-gray-400 mb-2">Edge (this device) — {memories.length}</p>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {memories.map((m) => {
+                const inCloud = cloudIds.has(m.point_id);
+                const isLocal = m.payload.security_tier === "LOCAL_ONLY";
+                return (
+                  <div key={m.point_id} className="bg-gray-800 rounded p-2">
+                    <p className="text-xs">{m.payload.text}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className={`text-xs px-2 py-0.5 rounded ${tierColor(m.payload.security_tier)}`}>
+                        {m.payload.security_tier}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {isLocal ? "🔒 stays on device" : inCloud ? "☁️ in cloud" : "⏳ not yet synced"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm text-gray-400 mb-2">
+              Cloud (server) — {cloudReachable ? cloudMemories.length : "unreachable"}
+            </p>
+            {!cloudReachable ? (
+              <p className="text-xs text-red-400">Cloud unreachable — working offline.</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {cloudMemories.map((m) => (
+                  <div key={m.point_id} className="bg-gray-800 rounded p-2">
+                    <p className="text-xs">{m.payload.text}</p>
+                    <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${tierColor(m.payload.security_tier)}`}>
+                      {m.payload.security_tier}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -382,6 +484,8 @@ export default function Dashboard() {
                 <span className="ml-2">
                   {r.dirty_flag === 0
                     ? "✅ synced"
+                    : r.dirty_flag === 2
+                    ? "🔒 kept on device"
                     : r.error_message?.includes("CONFLICT")
                     ? "⚠️ conflict"
                     : "⏳ pending"}
