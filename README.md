@@ -260,26 +260,7 @@ Invoke-RestMethod -Uri "http://localhost:6335/collections/memories" -Method Dele
 
 ---
 
-## Demo script (12 steps)
-
-1. Show the dashboard online, Edge and Cloud both reachable.
-2. Add a patient note — confirm it's auto-tagged `LOCAL_ONLY`.
-3. Add a public-health report — confirm `CLOUD_RESIDENT`.
-4. Search "breathing problems" — the matching patient note ranks highest
-   despite no shared keywords.
-5. Go offline.
-6. Add another note — still stored and searchable locally.
-7. Run sync while offline — confirm it reports "skipped."
-8. Go online.
-9. Run sync — pending notes reach Cloud; **patient notes do not**.
-10. Simulate or trigger a conflict (two edits to the same note) — confirm it's
-    flagged, not silently overwritten.
-11. Resolve the conflict from the dashboard.
-12. Show the Edge-vs-Cloud comparison: patient notes exist only on the left.
-
----
-
-## Honest trade-offs (for judges, or your own reference)
+## Enhancements for Production
 
 | Simplified for the hackathon | Production version would use |
 |---|---|
